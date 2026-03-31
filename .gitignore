@@ -5,3 +5,4 @@ dist
 .env.*.local
 *.log
 .DS_Store
+TransFex_Frontend_Project_Plan.md
