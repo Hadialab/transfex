@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #4f46e5;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6366f1;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-slate-950 text-white antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  ::selection {
+    @apply bg-brand-500/30;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+
+  .glass-card {
+    @apply bg-slate-900/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl;
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:border-brand-500/30 hover:shadow-lg hover:shadow-brand-500/5;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-brand-400 via-violet-400 to-purple-400 bg-clip-text text-transparent;
+  }
+
+  .gradient-border {
+    @apply relative;
+  }
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl p-[1px];
+    background: linear-gradient(135deg, #818cf8, #6366f1, #8b5cf6);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  .glow {
+    box-shadow: 0 0 40px -10px rgba(99, 102, 241, 0.3);
+  }
+
+  .glow-sm {
+    box-shadow: 0 0 20px -5px rgba(99, 102, 241, 0.2);
+  }
+
+  .mesh-bg {
+    background-image:
+      radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(139, 92, 246, 0.06) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, rgba(99, 102, 241, 0.04) 0px, transparent 50%),
+      radial-gradient(at 80% 50%, rgba(168, 85, 247, 0.04) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.06) 0px, transparent 50%);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    animation: fadeIn 0.5s ease-out forwards, slideUp 0.5s ease-out forwards;
+  }
+}
