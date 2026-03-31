@@ -112,7 +112,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 ml-auto shrink-0">
         <button onClick={toggle} className="p-2.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
           {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
         </button>
