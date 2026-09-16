@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Search, Sun, Moon, Menu, X, Check, CheckCheck } from 'lucide-react';
+import { Bell, Search, Sun, Moon, Menu, X, Check, CheckCheck, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useShipmentStore } from '../../stores/shipmentStore';
+import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../utils/cn';
 import { timeAgo } from '../../utils/helpers';
 
@@ -17,11 +18,22 @@ export function Header({ onMenuToggle }: HeaderProps) {
   const { isDark, toggle } = useThemeStore();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore();
   const shipments = useShipmentStore((s) => s.shipments);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showUser, setShowUser] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const userRef = useRef<HTMLDivElement>(null);
+
+  const initials = (user?.name ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('') || 'U';
 
   const unread = unreadCount();
 
@@ -42,6 +54,9 @@ export function Header({ onMenuToggle }: HeaderProps) {
     function handleClick(e: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifs(false);
+      }
+      if (userRef.current && !userRef.current.contains(e.target as Node)) {
+        setShowUser(false);
       }
     }
     document.addEventListener('mousedown', handleClick);
@@ -196,8 +211,48 @@ export function Header({ onMenuToggle }: HeaderProps) {
           </AnimatePresence>
         </div>
 
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm ml-2 shadow-lg shadow-brand-500/20">
-          H
+        <div ref={userRef} className="relative ml-2">
+          <button
+            onClick={() => setShowUser(!showUser)}
+            aria-haspopup="menu"
+            aria-expanded={showUser}
+            className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-brand-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          >
+            {initials}
+          </button>
+
+          <AnimatePresence>
+            {showUser && (
+              <motion.div
+                initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                className="absolute right-0 top-full mt-2 w-60 bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden"
+              >
+                <div className="px-4 py-3 border-b border-slate-700/50">
+                  <p className="text-sm font-medium text-white truncate">{user?.name}</p>
+                  <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                  <span className="mt-2 inline-block text-[10px] font-semibold tracking-wide text-brand-300 bg-brand-500/10 border border-brand-500/20 rounded-md px-1.5 py-0.5">
+                    {user?.role === 'admin' ? 'Admin' : 'Staff'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => { setShowUser(false); navigate('/settings'); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 transition-colors"
+                >
+                  <SettingsIcon className="w-4 h-4 text-slate-400" />
+                  Settings
+                </button>
+                <button
+                  onClick={() => { setShowUser(false); logout(); navigate('/login', { replace: true }); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-300 hover:bg-rose-500/10 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </header>
