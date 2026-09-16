@@ -5,6 +5,26 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Neutral ramp resolves to CSS variables that swap on `.dark`.
+        // See the token block at the top of src/index.css.
+        slate: {
+          50: 'rgb(var(--c-50) / <alpha-value>)',
+          100: 'rgb(var(--c-100) / <alpha-value>)',
+          200: 'rgb(var(--c-200) / <alpha-value>)',
+          300: 'rgb(var(--c-300) / <alpha-value>)',
+          400: 'rgb(var(--c-400) / <alpha-value>)',
+          500: 'rgb(var(--c-500) / <alpha-value>)',
+          600: 'rgb(var(--c-600) / <alpha-value>)',
+          700: 'rgb(var(--c-700) / <alpha-value>)',
+          800: 'rgb(var(--c-800) / <alpha-value>)',
+          900: 'rgb(var(--c-900) / <alpha-value>)',
+          950: 'rgb(var(--c-950) / <alpha-value>)',
+        },
+        // `white` means "primary foreground" throughout this codebase, so it
+        // flips too. For text that sits on a brand/colored fill and must stay
+        // white in both themes, use `text-on-accent`.
+        white: 'rgb(var(--c-fg) / <alpha-value>)',
+        'on-accent': '#ffffff',
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',

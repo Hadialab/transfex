@@ -2,6 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens.
+ *
+ * The whole app is written against the `slate` ramp with dark-mode semantics:
+ * slate-950 is the page, white is primary text, slate-400/500 are secondary.
+ * So instead of rewriting ~500 class names with `dark:` variants, the ramp
+ * itself is a set of CSS variables that swap on `.dark`.
+ *
+ * Dark values are the real Tailwind slate palette, so dark mode is unchanged.
+ * Light values invert the ramp: slate-950 becomes the white page, slate-300/400
+ * become readable body text, slate-700 becomes a hairline border.
+ *
+ * Values are space-separated RGB channels so Tailwind opacity modifiers
+ * (bg-slate-800/50) keep working.
+ */
+
+@layer base {
+  /* Light — the default */
+  :root {
+    --c-50: 2 6 23;
+    --c-100: 15 23 42;
+    --c-200: 30 41 59;
+    --c-300: 51 65 85;
+    --c-400: 71 85 105;
+    --c-500: 100 116 139;
+    --c-600: 148 163 184;
+    --c-700: 226 232 240;
+    --c-800: 237 242 247;
+    --c-900: 248 250 252;
+    --c-950: 255 255 255;
+    --c-fg: 15 23 42;
+
+    --mesh-1: rgba(99, 102, 241, 0.07);
+    --mesh-2: rgba(139, 92, 246, 0.05);
+    --mesh-3: rgba(168, 85, 247, 0.04);
+    --scrollbar: #a5b4fc;
+    --scrollbar-hover: #818cf8;
+  }
+
+  /* Dark */
+  .dark {
+    --c-50: 248 250 252;
+    --c-100: 241 245 249;
+    --c-200: 226 232 240;
+    --c-300: 203 213 225;
+    --c-400: 148 163 184;
+    --c-500: 100 116 139;
+    --c-600: 71 85 105;
+    --c-700: 51 65 85;
+    --c-800: 30 41 59;
+    --c-900: 15 23 42;
+    --c-950: 2 6 23;
+    --c-fg: 255 255 255;
+
+    --mesh-1: rgba(99, 102, 241, 0.08);
+    --mesh-2: rgba(139, 92, 246, 0.06);
+    --mesh-3: rgba(168, 85, 247, 0.04);
+    --scrollbar: #4f46e5;
+    --scrollbar-hover: #6366f1;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+}
+
 @layer base {
   ::-webkit-scrollbar {
     width: 6px;
@@ -11,11 +80,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #4f46e5;
+    background: var(--scrollbar);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #6366f1;
+    background: var(--scrollbar-hover);
   }
 
   html {
@@ -24,6 +93,7 @@
 
   body {
     @apply bg-slate-950 text-white antialiased;
+    transition: background-color 200ms ease, color 200ms ease;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
@@ -46,7 +116,10 @@
   }
 
   .gradient-text {
-    @apply bg-gradient-to-r from-brand-400 via-violet-400 to-purple-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-brand-600 via-violet-600 to-purple-600 bg-clip-text text-transparent;
+  }
+  .dark .gradient-text {
+    @apply from-brand-400 via-violet-400 to-purple-400;
   }
 
   .gradient-border {
@@ -72,11 +145,11 @@
 
   .mesh-bg {
     background-image:
-      radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
-      radial-gradient(at 80% 0%, rgba(139, 92, 246, 0.06) 0px, transparent 50%),
-      radial-gradient(at 0% 50%, rgba(99, 102, 241, 0.04) 0px, transparent 50%),
-      radial-gradient(at 80% 50%, rgba(168, 85, 247, 0.04) 0px, transparent 50%),
-      radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.06) 0px, transparent 50%);
+      radial-gradient(at 40% 20%, var(--mesh-1) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, var(--mesh-2) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, var(--mesh-3) 0px, transparent 50%),
+      radial-gradient(at 80% 50%, var(--mesh-3) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, var(--mesh-2) 0px, transparent 50%);
   }
 }
 

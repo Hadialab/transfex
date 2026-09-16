@@ -56,6 +56,9 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', isDark ? '#020617' : '#ffffff');
   }, [isDark]);
 
   return (
