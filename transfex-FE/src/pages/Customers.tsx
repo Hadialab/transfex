@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -21,9 +21,16 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 
 export default function Customers() {
   const customers = useCustomerStore((s) => s.customers);
+  const customersLoading = useCustomerStore((s) => s.loading);
+  const customersLoaded = useCustomerStore((s) => s.loaded);
+  const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
   const shipments = useShipmentStore((s) => s.shipments);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!customersLoaded) fetchCustomers();
+  }, [customersLoaded, fetchCustomers]);
 
   const filtered = useMemo(() => {
     if (!search) return customers;
@@ -40,7 +47,9 @@ export default function Customers() {
   const selectedShipments = selectedId ? shipments.filter((s) => s.customerId === selectedId) : [];
 
   const totalCustomerValue = customers.reduce((acc, c) => acc + c.totalSpent, 0);
-  const avgOrders = Math.round(customers.reduce((acc, c) => acc + c.totalOrders, 0) / customers.length);
+  const avgOrders = customers.length
+    ? Math.round(customers.reduce((acc, c) => acc + c.totalOrders, 0) / customers.length)
+    : 0;
 
   return (
     <PageContainer title="Customers" subtitle={`${customers.length} registered customers`}>
@@ -84,6 +93,12 @@ export default function Customers() {
             </div>
           </div>
           <div className="divide-y divide-slate-800/50">
+            {customersLoading && customers.length === 0 && (
+              <p className="text-xs text-slate-500 text-center py-8">Loading customers...</p>
+            )}
+            {!customersLoading && customersLoaded && filtered.length === 0 && (
+              <p className="text-xs text-slate-500 text-center py-8">No customers found</p>
+            )}
             {filtered.map((customer, idx) => (
               <motion.button
                 key={customer.id}
@@ -141,7 +156,7 @@ export default function Customers() {
                 </div>
               </div>
 
-              <a
+<a              
                 href={`https://wa.me/${selected.phone.replace(/[^0-9]/g, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"

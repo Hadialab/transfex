@@ -18,7 +18,7 @@ type FormValues = z.infer<typeof schema>;
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loading, error, clearError, seedDemoAccount } = useAuthStore();
+  const { login, loading, error, clearError } = useAuthStore();
 
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
@@ -30,8 +30,7 @@ export default function Login() {
 
   useEffect(() => {
     clearError();
-    seedDemoAccount();
-  }, [clearError, seedDemoAccount]);
+  }, [clearError]);
 
   async function onSubmit(values: FormValues) {
     const ok = await login(values);
@@ -97,10 +96,6 @@ export default function Login() {
           )}
         </button>
       </form>
-
-      <p className="mt-5 text-xs text-slate-500 leading-relaxed">
-        Demo account: admin@transfex.io / transfex123
-      </p>
     </AuthLayout>
   );
 }

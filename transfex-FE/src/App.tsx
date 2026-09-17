@@ -4,6 +4,8 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { RequireAuth, RedirectIfAuthed } from './components/auth/RouteGuards';
 import { useThemeStore } from './stores/themeStore';
+import { useAuthStore } from './stores/authStore';
+import { useCustomerStore } from './stores/customerStore';
 
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -32,6 +34,11 @@ function PageLoader() {
 function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 mesh-bg">
@@ -53,6 +60,8 @@ function DashboardLayout() {
 
 export default function App() {
   const isDark = useThemeStore((s) => s.isDark);
+  const initializing = useAuthStore((s) => s.initializing);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
@@ -60,6 +69,18 @@ export default function App() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute('content', isDark ? '#020617' : '#ffffff');
   }, [isDark]);
+
+  useEffect(() => {
+    bootstrap();
+  }, [bootstrap]);
+
+  if (initializing) {
+    return (
+      <div className="h-screen bg-slate-950 mesh-bg">
+        <PageLoader />
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

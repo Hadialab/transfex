@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { api, ApiError, setAccessToken, setAuthFailureHandler } from '../lib/apiClient';
 
 export type Role = 'admin' | 'staff';
 
@@ -11,134 +11,90 @@ export interface AuthUser {
   createdAt: string;
 }
 
-interface StoredUser extends AuthUser {
-  salt: string;
-  passwordHash: string;
-}
-
 interface AuthState {
-  users: StoredUser[];
   user: AuthUser | null;
+  /** True while the app is doing its one-time silent-refresh check on load. */
+  initializing: boolean;
   loading: boolean;
   error: string | null;
   register: (input: { name: string; email: string; password: string }) => Promise<boolean>;
   login: (input: { email: string; password: string }) => Promise<boolean>;
   logout: () => void;
   clearError: () => void;
-  seedDemoAccount: () => Promise<void>;
+  /** Call once on app mount: tries the httpOnly refresh cookie, then /me. */
+  bootstrap: () => Promise<void>;
 }
 
-/* ------------------------------------------------------------------ */
-/* Password helpers                                                    */
-/* ------------------------------------------------------------------ */
+export const useAuthStore = create<AuthState>((set, get) => {
+  // If any request anywhere gets a 401 that a silent refresh can't fix,
+  // the session is over — drop the user so RequireAuth sends them to /login.
+  setAuthFailureHandler(() => set({ user: null }));
 
-function toHex(bytes: Uint8Array) {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+  return {
+    user: null,
+    initializing: true,
+    loading: false,
+    error: null,
 
-function makeSalt() {
-  return toHex(crypto.getRandomValues(new Uint8Array(16)));
-}
+    clearError: () => set({ error: null }),
 
-/**
- * Salted SHA-256. Adequate for a local demo, NOT adequate for production —
- * SHA-256 is fast by design and therefore cheap to brute-force. When a real
- * backend exists, hash with argon2id or bcrypt on the server and delete this.
- */
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const data = new TextEncoder().encode(`${salt}:${password}`);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return toHex(new Uint8Array(digest));
-}
-
-const normalizeEmail = (email: string) => email.trim().toLowerCase();
-
-function publicUser(u: StoredUser): AuthUser {
-  const { salt: _salt, passwordHash: _hash, ...rest } = u;
-  return rest;
-}
-
-/* ------------------------------------------------------------------ */
-/* Store                                                               */
-/* ------------------------------------------------------------------ */
-
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      users: [],
-      user: null,
-      loading: false,
-      error: null,
-
-      clearError: () => set({ error: null }),
-
-      register: async ({ name, email, password }) => {
-        set({ loading: true, error: null });
-        const cleanEmail = normalizeEmail(email);
-
-        if (get().users.some((u) => u.email === cleanEmail)) {
-          set({ loading: false, error: 'That email is already registered. Sign in instead.' });
-          return false;
-        }
-
-        const salt = makeSalt();
-        const passwordHash = await hashPassword(password, salt);
-
-        const newUser: StoredUser = {
-          id: crypto.randomUUID(),
-          name: name.trim(),
-          email: cleanEmail,
-          // First account to exist runs the place.
-          role: get().users.length === 0 ? 'admin' : 'staff',
-          createdAt: new Date().toISOString(),
-          salt,
-          passwordHash,
-        };
-
-        set((state) => ({
-          users: [...state.users, newUser],
-          user: publicUser(newUser),
-          loading: false,
-        }));
-        return true;
-      },
-
-      login: async ({ email, password }) => {
-        set({ loading: true, error: null });
-        const cleanEmail = normalizeEmail(email);
-        const match = get().users.find((u) => u.email === cleanEmail);
-
-        // Hash regardless of whether the account exists, so a missing account
-        // and a wrong password take the same amount of time to fail.
-        const attempt = await hashPassword(password, match?.salt ?? 'no-such-user');
-
-        if (!match || attempt !== match.passwordHash) {
-          set({ loading: false, error: 'Email or password is incorrect.' });
-          return false;
-        }
-
-        set({ user: publicUser(match), loading: false });
-        return true;
-      },
-
-      logout: () => set({ user: null, error: null }),
-
-      seedDemoAccount: async () => {
-        if (get().users.length > 0) return;
-        await get().register({
-          name: 'Hadi',
-          email: 'admin@transfex.io',
-          password: 'transfex123',
+    register: async ({ name, email, password }) => {
+      set({ loading: true, error: null });
+      try {
+        const data = await api.post<{ user: AuthUser; accessToken: string }>('/api/auth/register', {
+          name,
+          email,
+          password,
         });
-        // Seeding shouldn't drop you straight into the dashboard.
+        setAccessToken(data.accessToken);
+        set({ user: data.user, loading: false });
+        return true;
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
+        set({ loading: false, error: message });
+        return false;
+      }
+    },
+
+    login: async ({ email, password }) => {
+      set({ loading: true, error: null });
+      try {
+        const data = await api.post<{ user: AuthUser; accessToken: string }>('/api/auth/login', {
+          email,
+          password,
+        });
+        setAccessToken(data.accessToken);
+        set({ user: data.user, loading: false });
+        return true;
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Something went wrong. Try again.';
+        set({ loading: false, error: message });
+        return false;
+      }
+    },
+
+    logout: () => {
+      // Fire and forget — the cookie clears server-side regardless of whether
+      // the caller waits, and we want the UI to feel instant.
+      api.post('/api/auth/logout').catch(() => {});
+      setAccessToken(null);
+      set({ user: null, error: null });
+    },
+
+    bootstrap: async () => {
+      try {
+        // No refresh token cookie, an expired one, etc. all just fail here —
+        // that's the normal "not signed in" case, not an error to surface.
+        const refreshed = await api.post<{ accessToken: string }>('/api/auth/refresh');
+        setAccessToken(refreshed.accessToken);
+        const me = await api.get<{ user: AuthUser }>('/api/auth/me');
+        set({ user: me.user });
+      } catch {
+        setAccessToken(null);
         set({ user: null });
-      },
-    }),
-    {
-      name: 'transfex-auth',
-      partialize: (state) => ({ users: state.users, user: state.user }),
-    }
-  )
-);
+      } finally {
+        set({ initializing: false });
+      }
+    },
+  };
+});
