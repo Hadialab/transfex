@@ -13,7 +13,8 @@ import type {
   UpdateStatusInput,
   ListShipmentsQuery,
 } from './shipments.schemas';
-
+import * as notificationRepo from '../notifications/notifications.repository';
+import type { NotificationType } from '../notifications/notifications.types';
 // Ladder the frontend renders in Timeline.tsx. `flagged` is deliberately not
 // on it - it's a side state reachable from anywhere (see isAllowedTransition).
 const STATUS_ORDER: ShipmentStatus[] = [
@@ -35,6 +36,49 @@ function isAllowedTransition(from: ShipmentStatus, to: ShipmentStatus): boolean 
   const fromIdx = STATUS_ORDER.indexOf(from);
   const toIdx = STATUS_ORDER.indexOf(to);
   return fromIdx >= 0 && toIdx === fromIdx + 1;
+}
+
+// Title + type to use when a status change fans out a notification.
+// Mirrors the tone of the mock data the frontend was built against.
+const NOTIFICATION_BY_STATUS: Record<
+  ShipmentStatus,
+  { title: string; type: NotificationType }
+> = {
+  pending: { title: 'New Order', type: 'info' },
+  picked_up: { title: 'Shipment Picked Up', type: 'info' },
+  in_transit: { title: 'Shipment In Transit', type: 'info' },
+  customs: { title: 'Customs Alert', type: 'warning' },
+  out_for_delivery: { title: 'Shipment Out for Delivery', type: 'info' },
+  delivered: { title: 'Delivery Confirmed', type: 'success' },
+  flagged: { title: 'Shipment Flagged', type: 'error' },
+};
+
+const STATUS_LABEL: Record<ShipmentStatus, string> = {
+  pending: 'pending',
+  picked_up: 'picked up',
+  in_transit: 'in transit',
+  customs: 'in customs',
+  out_for_delivery: 'out for delivery',
+  delivered: 'delivered',
+  flagged: 'flagged',
+};
+
+function buildStatusNotificationMessage(
+  status: ShipmentStatus,
+  orderId: string,
+  customerName: string,
+  note?: string
+): string {
+  switch (status) {
+    case 'delivered':
+      return `${orderId} has been delivered to ${customerName}`;
+    case 'customs':
+      return `${orderId} arrived at customs and is awaiting clearance`;
+    case 'flagged':
+      return note ? `${orderId} flagged - ${note}` : `${orderId} flagged`;
+    default:
+      return `${orderId} is now ${STATUS_LABEL[status]}`;
+  }
 }
 
 function allowedNextStatuses(from: ShipmentStatus): ShipmentStatus[] {
@@ -170,7 +214,6 @@ export async function update(
   if (!row) throw ApiError.notFound('Shipment not found');
   return toPublicShipment(row);
 }
-
 export async function updateStatus(
   id: string,
   input: UpdateStatusInput
@@ -178,13 +221,19 @@ export async function updateStatus(
   await withTransaction(async (client: PoolClient) => {
     // Lock the row so two concurrent status updates can't both pass the
     // ladder check and append conflicting history entries.
-    const current = await client.query<{ status: ShipmentStatus }>(
-      'SELECT status FROM shipments WHERE id = $1 FOR UPDATE',
+    const current = await client.query<{
+      status: ShipmentStatus;
+      order_id: string;
+      customer_name: string;
+    }>(
+      'SELECT status, order_id, customer_name FROM shipments WHERE id = $1 FOR UPDATE',
       [id]
     );
     if (!current.rows[0]) throw ApiError.notFound('Shipment not found');
 
-    const from = current.rows[0].status;
+    const { status: from, order_id: orderId, customer_name: customerName } =
+      current.rows[0];
+
     if (!isAllowedTransition(from, input.status)) {
       throw ApiError.badRequest(
         `Cannot move status from "${from}" to "${input.status}"`,
@@ -210,6 +259,21 @@ export async function updateStatus(
        VALUES ($1, $2, $3, $4)`,
       [id, input.status, input.note ?? null, input.location ?? null]
     );
+
+    // Fan out a notification to every admin, inside the same transaction -
+    // a rolled-back status change can't leave a stray notification behind.
+    const meta = NOTIFICATION_BY_STATUS[input.status];
+    await notificationRepo.insertForAdmins(client, {
+      title: meta.title,
+      message: buildStatusNotificationMessage(
+        input.status,
+        orderId,
+        customerName,
+        input.note
+      ),
+      type: meta.type,
+      shipmentId: id,
+    });
   });
 
   return getById(id);

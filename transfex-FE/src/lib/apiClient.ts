@@ -1,17 +1,17 @@
 /**
  * Thin fetch wrapper around the Transfex backend.
  *
- * Design notes (mirrors the backend's own choices, see transfex-backend/README):
- * - The access token lives ONLY in memory (a module-level variable here) — never
- *   in localStorage/sessionStorage. A page reload always goes through a silent
- *   `/api/auth/refresh` call (see authStore's `bootstrap`) to get a new one.
- * - The refresh token is an httpOnly cookie the browser manages automatically;
- *   we never read or store it ourselves. `credentials: 'include'` on every
- *   request is what makes the browser attach it.
- * - On a 401 from any authenticated request (except /auth/* itself), we try
- *   exactly one silent refresh, then replay the original request once. If the
- *   refresh also fails, we clear the token and notify whoever registered
- *   `onAuthFailure` (authStore) so the app-wide user state gets cleared too.
+ * Design notes:
+ * - Access token lives ONLY in memory. Page reloads go through a silent
+ *   /api/auth/refresh (see authStore.bootstrap).
+ * - Refresh token is an httpOnly cookie managed by the browser.
+ * - On a 401 from an authenticated request, one refresh is attempted, then
+ *   the original request is replayed once. If the refresh fails, the app
+ *   is notified via onAuthFailure.
+ * - Refresh is single-flight: concurrent 401s share one HTTP refresh call.
+ *   This is critical, because the backend rotates the refresh token on every
+ *   call and treats a replayed token as a leak - firing two parallel
+ *   refreshes kills every session.
  */
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -38,7 +38,6 @@ export function getAccessToken() {
   return accessToken;
 }
 
-/** authStore registers a callback here so a failed silent-refresh can clear app state. */
 export function setAuthFailureHandler(handler: (() => void) | null) {
   onAuthFailure = handler;
 }
@@ -47,7 +46,6 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | undefined>;
-  /** Internal — prevents infinite retry loops when refresh itself 401s. */
   _isRetry?: boolean;
 }
 
@@ -61,30 +59,56 @@ function buildUrl(path: string, query?: RequestOptions['query']) {
   return url.toString();
 }
 
-async function parseErrorBody(res: Response): Promise<{ message: string; details?: Record<string, string[] | undefined> }> {
+async function parseErrorBody(
+  res: Response
+): Promise<{ message: string; details?: Record<string, string[] | undefined> }> {
   try {
     const data = await res.json();
     if (data?.error?.message) return data.error;
   } catch {
-    // Response wasn't JSON (e.g. a proxy error page) — fall through to a generic message.
+    // Response wasn't JSON (proxy error page, etc.)
   }
   return { message: `Request failed with status ${res.status}` };
 }
 
-/** One attempt at POST /api/auth/refresh. Never throws — returns whether it worked. */
+// ---------------------------------------------------------------------------
+// Single-flight refresh.
+//
+// Only one HTTP refresh is ever in flight. All concurrent callers await the
+// same promise. The slot is released once the promise settles.
+// ---------------------------------------------------------------------------
+
+let refreshPromise: Promise<string | null> | null = null;
+
+export function refreshSession(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  const p = (async () => {
+    try {
+      const res = await fetch(buildUrl('/api/auth/refresh'), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      setAccessToken(data.accessToken);
+      return data.accessToken as string;
+    } catch {
+      return null;
+    }
+  })();
+
+  refreshPromise = p;
+  // Guarded release: a newer refresh that started while this one was
+  // settling must not get clobbered to null by this one's finally.
+  p.finally(() => {
+    if (refreshPromise === p) refreshPromise = null;
+  });
+  return p;
+}
+
 async function trySilentRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch(buildUrl('/api/auth/refresh'), {
-      method: 'POST',
-      credentials: 'include',
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    setAccessToken(data.accessToken);
-    return true;
-  } catch {
-    return false;
-  }
+  return (await refreshSession()) !== null;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -97,11 +121,10 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const res = await fetch(buildUrl(path, query), {
     method,
     headers,
-    credentials: 'include', // required so the browser sends the httpOnly refresh cookie
+    credentials: 'include',
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  // 204 No Content — nothing to parse.
   if (res.status === 204) return undefined as T;
 
   if (res.status === 401 && !_isRetry && !path.startsWith('/api/auth/')) {
@@ -122,7 +145,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export const api = {
-  get: <T>(path: string, query?: RequestOptions['query']) => apiRequest<T>(path, { method: 'GET', query }),
+  get: <T>(path: string, query?: RequestOptions['query']) =>
+    apiRequest<T>(path, { method: 'GET', query }),
   post: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),

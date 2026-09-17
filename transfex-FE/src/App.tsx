@@ -7,6 +7,7 @@ import { useThemeStore } from './stores/themeStore';
 import { useAuthStore } from './stores/authStore';
 import { useCustomerStore } from './stores/customerStore';
 import { useShipmentStore } from './stores/shipmentStore';
+import { useNotificationStore } from './stores/notificationStore';
 
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -38,6 +39,11 @@ function DashboardLayout() {
   const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
   const fetchShipments = useShipmentStore((s) => s.fetchShipments);
   const shipmentsLoaded = useShipmentStore((s) => s.loaded);
+const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
+useEffect(() => {
+  fetchNotifications();
+}, [fetchNotifications]);
+
 
   useEffect(() => {
     fetchCustomers();

@@ -1,9 +1,8 @@
 import { create } from 'zustand';
 import type { Shipment, ShipmentStatus, Platform, Origin, OrderItem } from '../types';
 import { api, ApiError } from '../lib/apiClient';
+import { useNotificationStore } from './notificationStore';
 
-// Input shape POST /api/shipments accepts. Either customerId (existing) or
-// customer (create inline) - never both.
 export interface NewShipmentInput {
   customerId?: string;
   customer?: {
@@ -52,9 +51,6 @@ export const useShipmentStore = create<ShipmentStore>((set, get) => ({
   fetchShipments: async () => {
     set({ loading: true, error: null });
     try {
-      // pageSize 100 (the backend's max). The dashboard views assume the
-      // full list is in memory; revisit with real pagination if that stops
-      // being true.
       const data = await api.get<{ shipments: Shipment[] }>('/api/shipments', {
         pageSize: 100,
       });
@@ -86,6 +82,12 @@ export const useShipmentStore = create<ShipmentStore>((set, get) => ({
       set((state) => ({
         shipments: state.shipments.map((s) => (s.id === id ? data.shipment : s)),
       }));
+
+      // The backend fanned a notification out to every admin inside the
+      // same status-change transaction. Refresh our local list so the
+      // bell badge reflects it without waiting for the next mount.
+      useNotificationStore.getState().fetchNotifications();
+
       return data.shipment;
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Could not update status.';
