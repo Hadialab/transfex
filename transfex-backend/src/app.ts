@@ -8,6 +8,7 @@ import { logger } from './config/logger';
 import { generalLimiter } from './middleware/rateLimiters';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 import { authRouter } from './modules/auth/auth.routes';
+import { customersRouter } from './modules/customers/customers.routes';
 
 export const app = express();
 
@@ -28,9 +29,9 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/customers', customersRouter);
 
 // Later phases mount here:
-// app.use('/api/customers', customersRouter);
 // app.use('/api/shipments', shipmentsRouter);
 // app.use('/api/notifications', notificationsRouter);
 // app.use('/api/track', trackRouter);

@@ -11,9 +11,13 @@ export function notFoundHandler(req: Request, res: Response) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof ZodError) {
-    res.status(400).json({
-      error: { message: 'Validation failed', details: err.flatten().fieldErrors },
-    });
+    const flat = err.flatten();
+    // Root-level checks (e.g. `.refine()` with no field path, like "provide
+    // at least one field to update") land in formErrors, not fieldErrors —
+    // without this they'd silently vanish and the client would just see
+    // "Validation failed" with no explanation.
+    const message = flat.formErrors[0] ?? 'Validation failed';
+    res.status(400).json({ error: { message, details: flat.fieldErrors } });
     return;
   }
 
