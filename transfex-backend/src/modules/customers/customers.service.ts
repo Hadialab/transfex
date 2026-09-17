@@ -60,7 +60,21 @@ export async function update(id: string, input: UpdateCustomerInput): Promise<Pu
   return toPublicCustomer(row);
 }
 
+// in customers.service.ts
+
 export async function remove(id: string): Promise<void> {
-  const deleted = await repo.deleteCustomer(id);
-  if (!deleted) throw ApiError.notFound('Customer not found');
+  try {
+    const deleted = await repo.deleteCustomer(id);
+    if (!deleted) throw ApiError.notFound('Customer not found');
+  } catch (err) {
+    // Phase 3 added a RESTRICT FK from shipments.customer_id. If a customer
+    // still has shipments, Postgres raises 23503 - translate it to a clean
+    // 409 rather than a 500. Done by catching the driver error instead of a
+    // pre-check, so there's no TOCTOU window where a shipment could be
+    // inserted between the check and the delete.
+    if ((err as { code?: string }).code === '23503') {
+      throw ApiError.conflict('Cannot delete a customer with existing shipments');
+    }
+    throw err;
+  }
 }

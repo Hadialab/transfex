@@ -1,59 +1,121 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Shipment, ShipmentStatus } from '../types';
-import { mockShipments } from '../data/mockData';
+import type { Shipment, ShipmentStatus, Platform, Origin, OrderItem } from '../types';
+import { api, ApiError } from '../lib/apiClient';
+
+// Input shape POST /api/shipments accepts. Either customerId (existing) or
+// customer (create inline) - never both.
+export interface NewShipmentInput {
+  customerId?: string;
+  customer?: {
+    name: string;
+    phone: string;
+    email?: string;
+    address: string;
+    city: string;
+  };
+  platform: Platform;
+  origin: Origin;
+  items: OrderItem[];
+  weight: number;
+  dimensions?: string;
+  declaredValue: number;
+  trackingNumber?: string;
+  estimatedDelivery: string;
+}
 
 interface ShipmentStore {
   shipments: Shipment[];
-  addShipment: (shipment: Shipment) => void;
-  updateShipmentStatus: (id: string, status: ShipmentStatus, note?: string, location?: string) => void;
-  addNote: (id: string, text: string, author: string) => void;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  fetchShipments: () => Promise<void>;
+  addShipment: (input: NewShipmentInput) => Promise<Shipment | null>;
+  updateShipmentStatus: (
+    id: string,
+    status: ShipmentStatus,
+    note?: string,
+    location?: string
+  ) => Promise<Shipment | null>;
+  addNote: (id: string, text: string) => Promise<Shipment | null>;
   getShipment: (id: string) => Shipment | undefined;
   getShipmentByOrderId: (orderId: string) => Shipment | undefined;
   getShipmentsByCustomer: (customerId: string) => Shipment[];
   getShipmentsByStatus: (status: ShipmentStatus) => Shipment[];
 }
 
-export const useShipmentStore = create<ShipmentStore>()(
-  persist(
-    (set, get) => ({
-      shipments: mockShipments,
-      addShipment: (shipment) =>
-        set((state) => ({ shipments: [shipment, ...state.shipments] })),
-      updateShipmentStatus: (id, status, note, location) =>
-        set((state) => ({
-          shipments: state.shipments.map((s) =>
-            s.id === id
-              ? {
-                  ...s,
-                  status,
-                  updatedAt: new Date().toISOString(),
-                  actualDelivery: status === 'delivered' ? new Date().toISOString() : s.actualDelivery,
-                  statusHistory: [
-                    ...s.statusHistory,
-                    { status, timestamp: new Date().toISOString(), note, location },
-                  ],
-                }
-              : s
-          ),
-        })),
-      addNote: (id, text, author) =>
-        set((state) => ({
-          shipments: state.shipments.map((s) =>
-            s.id === id
-              ? {
-                  ...s,
-                  notes: [...s.notes, { id: crypto.randomUUID(), text, author, createdAt: new Date().toISOString() }],
-                  updatedAt: new Date().toISOString(),
-                }
-              : s
-          ),
-        })),
-      getShipment: (id) => get().shipments.find((s) => s.id === id),
-      getShipmentByOrderId: (orderId) => get().shipments.find((s) => s.orderId.toLowerCase() === orderId.toLowerCase()),
-      getShipmentsByCustomer: (customerId) => get().shipments.filter((s) => s.customerId === customerId),
-      getShipmentsByStatus: (status) => get().shipments.filter((s) => s.status === status),
-    }),
-    { name: 'transfex-shipments' }
-  )
-);
+export const useShipmentStore = create<ShipmentStore>((set, get) => ({
+  shipments: [],
+  loading: false,
+  loaded: false,
+  error: null,
+
+  fetchShipments: async () => {
+    set({ loading: true, error: null });
+    try {
+      // pageSize 100 (the backend's max). The dashboard views assume the
+      // full list is in memory; revisit with real pagination if that stops
+      // being true.
+      const data = await api.get<{ shipments: Shipment[] }>('/api/shipments', {
+        pageSize: 100,
+      });
+      set({ shipments: data.shipments, loading: false, loaded: true });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not load shipments.';
+      set({ loading: false, error: message });
+    }
+  },
+
+  addShipment: async (input) => {
+    try {
+      const data = await api.post<{ shipment: Shipment }>('/api/shipments', input);
+      set((state) => ({ shipments: [data.shipment, ...state.shipments] }));
+      return data.shipment;
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not create shipment.';
+      set({ error: message });
+      return null;
+    }
+  },
+
+  updateShipmentStatus: async (id, status, note, location) => {
+    try {
+      const data = await api.patch<{ shipment: Shipment }>(
+        `/api/shipments/${id}/status`,
+        { status, note, location }
+      );
+      set((state) => ({
+        shipments: state.shipments.map((s) => (s.id === id ? data.shipment : s)),
+      }));
+      return data.shipment;
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not update status.';
+      set({ error: message });
+      return null;
+    }
+  },
+
+  addNote: async (id, text) => {
+    try {
+      const data = await api.post<{ shipment: Shipment }>(
+        `/api/shipments/${id}/notes`,
+        { text }
+      );
+      set((state) => ({
+        shipments: state.shipments.map((s) => (s.id === id ? data.shipment : s)),
+      }));
+      return data.shipment;
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not add note.';
+      set({ error: message });
+      return null;
+    }
+  },
+
+  getShipment: (id) => get().shipments.find((s) => s.id === id),
+  getShipmentByOrderId: (orderId) =>
+    get().shipments.find((s) => s.orderId.toLowerCase() === orderId.toLowerCase()),
+  getShipmentsByCustomer: (customerId) =>
+    get().shipments.filter((s) => s.customerId === customerId),
+  getShipmentsByStatus: (status) =>
+    get().shipments.filter((s) => s.status === status),
+}));

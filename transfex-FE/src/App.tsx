@@ -6,6 +6,7 @@ import { RequireAuth, RedirectIfAuthed } from './components/auth/RouteGuards';
 import { useThemeStore } from './stores/themeStore';
 import { useAuthStore } from './stores/authStore';
 import { useCustomerStore } from './stores/customerStore';
+import { useShipmentStore } from './stores/shipmentStore';
 
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -21,10 +22,10 @@ const AiAssistant = lazy(() => import('./pages/AiAssistant'));
 
 function PageLoader() {
   return (
-    <div className="flex-1 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
         <div className="w-8 h-8 border-2 border-brand-500/20 border-t-brand-500 rounded-full animate-spin" />
-        <p className="text-xs text-slate-500">Loading...</p>
+        <p className="text-sm text-slate-500">Loading...</p>
       </div>
     </div>
   );
@@ -35,10 +36,16 @@ function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
+  const fetchShipments = useShipmentStore((s) => s.fetchShipments);
+  const shipmentsLoaded = useShipmentStore((s) => s.loaded);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
+
+  useEffect(() => {
+    if (!shipmentsLoaded) fetchShipments();
+  }, [shipmentsLoaded, fetchShipments]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 mesh-bg">

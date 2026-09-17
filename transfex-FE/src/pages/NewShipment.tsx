@@ -12,10 +12,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { PageContainer } from '../components/layout/PageContainer';
-import { useShipmentStore } from '../stores/shipmentStore';
+import { useShipmentStore, type NewShipmentInput } from '../stores/shipmentStore';
 import { useCustomerStore } from '../stores/customerStore';
 import { cn } from '../utils/cn';
-import { platformConfig, getEstimatedDays, generateId } from '../utils/helpers';
+import { platformConfig, getEstimatedDays } from '../utils/helpers';
 import type { Platform, Origin, OrderItem } from '../types';
 
 const steps = [
@@ -31,6 +31,7 @@ export default function NewShipment() {
   const customers = useCustomerStore((s) => s.customers);
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     customerId: '',
@@ -103,32 +104,47 @@ export default function NewShipment() {
     if (validateStep()) setStep((s) => Math.min(s + 1, 3));
   }
 
-  function submit() {
+  async function submit() {
+    if (!form.platform || !form.origin || submitting) return;
+
     const now = new Date();
     const eta = new Date(now);
     eta.setDate(eta.getDate() + getEstimatedDays(form.origin as Origin));
 
-    addShipment({
-      id: generateId(),
-      orderId: `TFX-${1000 + Math.floor(Math.random() * 9000)}`,
-      customerId: form.customerId || generateId(),
-      customerName: form.customerName,
+    // The backend assigns id, orderId, status, timestamps, and the initial
+    // status_history entry. We only send the business fields.
+    const input: NewShipmentInput = {
+      ...(form.customerId
+        ? { customerId: form.customerId }
+        : {
+            customer: {
+              name: form.customerName,
+              phone: form.phone,
+              address: form.address,
+              city: form.city,
+            },
+          }),
       platform: form.platform as Platform,
       origin: form.origin as Origin,
-      status: 'pending',
       items: form.items,
       weight: parseFloat(form.weight) || 0,
       dimensions: form.dimensions || undefined,
-      declaredValue: parseFloat(form.declaredValue) || form.items.reduce((a, i) => a + i.price * i.quantity, 0),
+      declaredValue:
+        parseFloat(form.declaredValue) ||
+        form.items.reduce((a, i) => a + i.price * i.quantity, 0),
       trackingNumber: form.trackingNumber || undefined,
       estimatedDelivery: eta.toISOString(),
-      notes: [],
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-      statusHistory: [{ status: 'pending', timestamp: now.toISOString(), location: form.origin === 'china' ? 'China' : 'Dubai' }],
-    });
+    };
 
-    navigate('/shipments');
+    setSubmitting(true);
+    const created = await addShipment(input);
+    setSubmitting(false);
+
+    if (created) {
+      navigate('/shipments');
+    } else {
+      setErrors({ submit: 'Could not create shipment. Please try again.' });
+    }
   }
 
   const inputClass = (key: string) =>
@@ -364,6 +380,11 @@ export default function NewShipment() {
                   </div>
                 </div>
               </div>
+              {errors.submit && (
+                <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">
+                  {errors.submit}
+                </p>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -382,8 +403,21 @@ export default function NewShipment() {
               Continue <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={submit} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-medium text-white hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2">
-              <Check className="w-4 h-4" /> Create Shipment
+            <button
+              onClick={submit}
+              disabled={submitting}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-medium text-white hover:shadow-lg hover:shadow-emerald-500/25 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                <>
+                  <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" /> Create Shipment
+                </>
+              )}
             </button>
           )}
         </div>

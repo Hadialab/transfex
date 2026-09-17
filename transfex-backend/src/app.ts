@@ -9,7 +9,7 @@ import { generalLimiter } from './middleware/rateLimiters';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 import { authRouter } from './modules/auth/auth.routes';
 import { customersRouter } from './modules/customers/customers.routes';
-
+import { shipmentRouter } from './modules/shipments/shipments.routes';
 export const app = express();
 
 app.use(helmet());
@@ -32,7 +32,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/customers', customersRouter);
 
 // Later phases mount here:
-// app.use('/api/shipments', shipmentsRouter);
+ app.use('/api/shipments', shipmentRouter);
 // app.use('/api/notifications', notificationsRouter);
 // app.use('/api/track', trackRouter);
 // app.use('/api/ai', aiRouter);

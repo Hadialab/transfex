@@ -59,9 +59,11 @@ export default function ShipmentDetail() {
     );
   }
 
-  function handleAddNote() {
+  async function handleAddNote() {
     if (!noteText.trim()) return;
-    addNote(shipment!.id, noteText, 'Admin');
+    // The author is resolved server-side from the JWT (req.user.sub) and
+    // snapshotted at write time. Never trust a client-supplied author name.
+    await addNote(shipment!.id, noteText);
     setNoteText('');
   }
 
