@@ -1,34 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Send, Bot, User, Loader2, Trash2, Package } from 'lucide-react';
+import { Sparkles, Send, Bot, Loader2, Trash2 } from 'lucide-react';
 import { PageContainer } from '../components/layout/PageContainer';
-import { chatWithGroq, type ChatMessage } from '../services/groqAi';
-import { useShipmentStore } from '../stores/shipmentStore';
+import { useAiStore } from '../stores/aiStore';
 import { cn } from '../utils/cn';
-import { statusConfig, platformConfig, originConfig } from '../utils/helpers';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
 
 const SUGGESTIONS = [
   'How many shipments are currently in transit?',
   'Which shipments are stuck in customs?',
-  'What is the average delivery time from China?',
-  'Summarize today\'s shipment operations',
   'Any flagged shipments I should worry about?',
+  "Summarize today's shipment operations",
   'Tips for faster customs clearance in Lebanon',
 ];
 
 export default function AiAssistant() {
-  const shipments = useShipmentStore((s) => s.shipments);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const messages = useAiStore((s) => s.messages);
+  const loading = useAiStore((s) => s.loading);
+  const error = useAiStore((s) => s.error);
+  const send = useAiStore((s) => s.send);
+  const clear = useAiStore((s) => s.clear);
+
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,66 +28,11 @@ export default function AiAssistant() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function buildContext(): string {
-    const statusCounts = shipments.reduce((acc, s) => {
-      acc[s.status] = (acc[s.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const lines = [
-      `Total shipments: ${shipments.length}`,
-      `Status breakdown: ${Object.entries(statusCounts).map(([s, c]) => `${statusConfig[s as keyof typeof statusConfig]?.label || s}: ${c}`).join(', ')}`,
-      `Platforms: ${[...new Set(shipments.map((s) => platformConfig[s.platform].label))].join(', ')}`,
-      `Origins: China (${shipments.filter((s) => s.origin === 'china').length}), Dubai (${shipments.filter((s) => s.origin === 'dubai').length})`,
-      '',
-      'Recent flagged shipments:',
-      ...shipments.filter((s) => s.status === 'flagged').map((s) => `- ${s.orderId}: ${s.customerName} (${s.notes[s.notes.length - 1]?.text || 'No details'})`),
-      '',
-      'Shipments in customs:',
-      ...shipments.filter((s) => s.status === 'customs').map((s) => `- ${s.orderId}: ${s.customerName}, ${originConfig[s.origin].label}`),
-    ];
-    return lines.join('\n');
-  }
-
-  async function handleSend(text?: string) {
-    const msg = text || input.trim();
+  function handleSend(text?: string) {
+    const msg = (text ?? input).trim();
     if (!msg || loading) return;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: msg,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
     setInput('');
-    setLoading(true);
-    setError('');
-
-    try {
-      const history: ChatMessage[] = messages.slice(-10).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.content,
-      }));
-
-      const response = await chatWithGroq(msg, buildContext(), history);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: response,
-          timestamp: new Date(),
-        },
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setLoading(false);
-      inputRef.current?.focus();
-    }
+    void send(msg);
   }
 
   return (
@@ -108,11 +45,11 @@ export default function AiAssistant() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-white">TransFex AI</h1>
-            <p className="text-xs text-slate-400">Powered by Groq · Ask about your shipments</p>
+            <p className="text-xs text-slate-400">Ask about your shipments</p>
           </div>
           {messages.length > 0 && (
             <button
-              onClick={() => setMessages([])}
+              onClick={clear}
               className="ml-auto p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
               title="Clear chat"
             >
@@ -168,10 +105,12 @@ export default function AiAssistant() {
                   )}
                 >
                   <div className="whitespace-pre-wrap">{msg.content}</div>
-                  <p className={cn(
-                    'text-[10px] mt-2',
-                    msg.role === 'user' ? 'text-brand-200' : 'text-slate-500'
-                  )}>
+                  <p
+                    className={cn(
+                      'text-[10px] mt-2',
+                      msg.role === 'user' ? 'text-brand-200' : 'text-slate-500'
+                    )}
+                  >
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
@@ -200,7 +139,9 @@ export default function AiAssistant() {
 
           {error && (
             <div className="text-center py-2">
-              <p className="text-xs text-rose-400 bg-rose-500/10 px-3 py-2 rounded-lg inline-block">{error}</p>
+              <p className="text-xs text-rose-400 bg-rose-500/10 px-3 py-2 rounded-lg inline-block">
+                {error}
+              </p>
             </div>
           )}
 

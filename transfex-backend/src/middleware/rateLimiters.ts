@@ -31,3 +31,18 @@ export const trackLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: { message: 'Too many lookups. Try again later.' } },
 });
+
+
+/**
+ * LLM calls cost real money per request - unlike every other route in this
+ * API, hammering this one has a direct dollar cost. 10 requests per 15
+ * minutes per IP is generous for a real user asking the assistant questions,
+ * and useless for someone trying to run up a bill.
+ */
+export const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: 'Too many AI requests. Try again later.' } },
+});
