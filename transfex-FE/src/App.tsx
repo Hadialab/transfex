@@ -36,14 +36,11 @@ function PageLoader() {
 function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
   const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
   const fetchShipments = useShipmentStore((s) => s.fetchShipments);
   const shipmentsLoaded = useShipmentStore((s) => s.loaded);
-const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
-useEffect(() => {
-  fetchNotifications();
-}, [fetchNotifications]);
-
+  const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
 
   useEffect(() => {
     fetchCustomers();
@@ -52,6 +49,12 @@ useEffect(() => {
   useEffect(() => {
     if (!shipmentsLoaded) fetchShipments();
   }, [shipmentsLoaded, fetchShipments]);
+
+  useEffect(() => {
+    // No `loaded` guard - the bell should refresh on every layout mount so
+    // notifications from another session don't linger.
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 mesh-bg">
@@ -105,6 +108,11 @@ export default function App() {
             <Route path="/register" element={<Register />} />
           </Route>
 
+          {/* Public - no auth, no dashboard chrome.
+              Deliberately outside RequireAuth: a visitor with an order ID
+              must be able to reach this without an account. */}
+          <Route path="/track" element={<TrackOrder />} />
+
           {/* Signed in */}
           <Route element={<RequireAuth />}>
             <Route element={<DashboardLayout />}>
@@ -114,7 +122,6 @@ export default function App() {
               <Route path="/shipments/:id" element={<ShipmentDetail />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/analytics" element={<Analytics />} />
-              <Route path="/track" element={<TrackOrder />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/ai" element={<AiAssistant />} />
             </Route>

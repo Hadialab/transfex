@@ -3,32 +3,50 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Package, MapPin, Calendar, Clock, ExternalLink } from 'lucide-react';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Timeline } from '../components/shipments/Timeline';
-import { PlatformLogo } from '../components/ui/PlatformLogo';
-import { useShipmentStore } from '../stores/shipmentStore';
-import { formatDate, formatCurrency, originConfig, platformConfig } from '../utils/helpers';
-import type { Shipment } from '../types';
+import { api, ApiError } from '../lib/apiClient';
+import { formatDate } from '../utils/helpers';
+import type { ShipmentStatus, StatusEvent } from '../types';
+
+interface PublicTracking {
+  orderId: string;
+  status: ShipmentStatus;
+  estimatedDelivery: string;
+  actualDelivery?: string;
+  statusHistory: StatusEvent[];
+}
 
 export default function TrackOrder() {
-  const getByOrderId = useShipmentStore((s) => s.getShipmentByOrderId);
   const [query, setQuery] = useState('');
-  const [result, setResult] = useState<Shipment | null | 'not_found'>(null);
+  const [result, setResult] = useState<PublicTracking | null | 'not_found'>(null);
   const [loading, setLoading] = useState(false);
 
-  function handleSearch(e: React.FormEvent) {
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    const code = query.trim();
+    if (!code || loading) return;
+
     setLoading(true);
-    setTimeout(() => {
-      const found = getByOrderId(query.trim());
-      setResult(found || 'not_found');
+    setResult(null);
+    try {
+      const data = await api.getPublic<PublicTracking>(
+        `/api/track/${encodeURIComponent(code)}`
+      );
+      setResult(data);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setResult('not_found');
+      } else {
+        // Network or 5xx - show a generic error rather than a false "not found".
+        setResult('not_found');
+      }
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   }
 
   return (
     <div className="min-h-screen mesh-bg">
       <div className="max-w-3xl mx-auto px-4 py-12 lg:py-20">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -41,12 +59,11 @@ export default function TrackOrder() {
             Track Your <span className="gradient-text">Shipment</span>
           </h1>
           <p className="text-slate-400 text-sm lg:text-base max-w-md mx-auto">
-            Enter your order ID to track your shipment in real-time.
+            Enter your order ID or tracking number to see your shipment status.
             Look for it in your confirmation message.
           </p>
         </motion.div>
 
-        {/* Search */}
         <motion.form
           onSubmit={handleSearch}
           initial={{ opacity: 0, y: 20 }}
@@ -77,12 +94,8 @@ export default function TrackOrder() {
               )}
             </button>
           </div>
-          <p className="text-[11px] text-slate-500 mt-2 ml-1">
-            Try: TFX-1001, TFX-1003, TFX-1005
-          </p>
         </motion.form>
 
-        {/* Results */}
         <AnimatePresence mode="wait">
           {result === 'not_found' && (
             <motion.div
@@ -108,74 +121,48 @@ export default function TrackOrder() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-6"
             >
-              {/* Summary Card */}
               <div className="glass-card p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-4">
-                    <PlatformLogo platform={result.platform} size="lg" />
-                    <div>
-                      <h2 className="text-xl font-bold text-white">{result.orderId}</h2>
-                      <p className="text-sm text-slate-400">{platformConfig[result.platform].label} · {originConfig[result.origin].flag} {originConfig[result.origin].label}</p>
-                    </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">{result.orderId}</h2>
+                    <p className="text-sm text-slate-400 mt-1">Order status</p>
                   </div>
                   <StatusBadge status={result.status} size="lg" />
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="p-3 rounded-xl bg-slate-800/30">
-                    <div className="flex items-center gap-2 text-slate-500 mb-1">
-                      <Package className="w-3.5 h-3.5" />
-                      <span className="text-[10px] uppercase tracking-wider">Items</span>
-                    </div>
-                    <p className="text-sm font-medium text-white">{result.items.length} item{result.items.length !== 1 ? 's' : ''}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-800/30">
-                    <div className="flex items-center gap-2 text-slate-500 mb-1">
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span className="text-[10px] uppercase tracking-wider">Origin</span>
-                    </div>
-                    <p className="text-sm font-medium text-white">{originConfig[result.origin].label}</p>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-3 rounded-xl bg-slate-800/30">
                     <div className="flex items-center gap-2 text-slate-500 mb-1">
                       <Calendar className="w-3.5 h-3.5" />
-                      <span className="text-[10px] uppercase tracking-wider">ETA</span>
+                      <span className="text-[10px] uppercase tracking-wider">
+                        {result.actualDelivery ? 'Delivered' : 'Estimated Delivery'}
+                      </span>
                     </div>
-                    <p className="text-sm font-medium text-white">{formatDate(result.estimatedDelivery)}</p>
+                    <p className="text-sm font-medium text-white">
+                      {formatDate(result.actualDelivery ?? result.estimatedDelivery)}
+                    </p>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-800/30">
                     <div className="flex items-center gap-2 text-slate-500 mb-1">
                       <Clock className="w-3.5 h-3.5" />
-                      <span className="text-[10px] uppercase tracking-wider">Tracking</span>
+                      <span className="text-[10px] uppercase tracking-wider">Last Update</span>
                     </div>
-                    <p className="text-sm font-medium text-white">{result.trackingNumber || '—'}</p>
+                    <p className="text-sm font-medium text-white">
+                      {result.statusHistory.length > 0
+                        ? formatDate(
+                            result.statusHistory[result.statusHistory.length - 1].timestamp
+                          )
+                        : '—'}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Timeline */}
               <div className="glass-card p-6">
                 <h3 className="text-base font-semibold text-white mb-6">Shipment Journey</h3>
                 <Timeline events={result.statusHistory} currentStatus={result.status} />
               </div>
 
-              {/* Items */}
-              <div className="glass-card p-6">
-                <h3 className="text-base font-semibold text-white mb-4">Package Contents</h3>
-                <div className="space-y-2">
-                  {result.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-800/30">
-                      <div>
-                        <p className="text-sm text-white">{item.name}</p>
-                        <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
-                      </div>
-                      <span className="text-sm text-slate-300">{formatCurrency(item.price * item.quantity)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Contact */}
               <div className="glass-card p-6 text-center">
                 <p className="text-sm text-slate-400 mb-3">Need help with your order?</p>
                 <a

@@ -12,6 +12,9 @@
  *   This is critical, because the backend rotates the refresh token on every
  *   call and treats a replayed token as a leak - firing two parallel
  *   refreshes kills every session.
+ * - Public routes (via getPublic) opt out of both the Authorization header
+ *   and the 401-retry path, so an anonymous /api/track lookup never touches
+ *   the session.
  */
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -38,6 +41,7 @@ export function getAccessToken() {
   return accessToken;
 }
 
+/** authStore registers a callback here so a failed silent-refresh can clear app state. */
 export function setAuthFailureHandler(handler: (() => void) | null) {
   onAuthFailure = handler;
 }
@@ -46,7 +50,10 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | undefined>;
+  /** Internal - prevents infinite retry loops when refresh itself 401s. */
   _isRetry?: boolean;
+  /** Public endpoints: don't send the token, don't retry on 401. */
+  skipAuth?: boolean;
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']) {
@@ -66,7 +73,7 @@ async function parseErrorBody(
     const data = await res.json();
     if (data?.error?.message) return data.error;
   } catch {
-    // Response wasn't JSON (proxy error page, etc.)
+    // Response wasn't JSON (e.g. a proxy error page) - fall through to a generic message.
   }
   return { message: `Request failed with status ${res.status}` };
 }
@@ -112,22 +119,23 @@ async function trySilentRefresh(): Promise<boolean> {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, _isRetry } = options;
+  const { method = 'GET', body, query, _isRetry, skipAuth } = options;
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+  if (!skipAuth && accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
   const res = await fetch(buildUrl(path, query), {
     method,
     headers,
-    credentials: 'include',
+    credentials: 'include', // required so the browser sends the httpOnly refresh cookie
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
+  // 204 No Content - nothing to parse.
   if (res.status === 204) return undefined as T;
 
-  if (res.status === 401 && !_isRetry && !path.startsWith('/api/auth/')) {
+  if (res.status === 401 && !_isRetry && !skipAuth && !path.startsWith('/api/auth/')) {
     const refreshed = await trySilentRefresh();
     if (refreshed) {
       return apiRequest<T>(path, { ...options, _isRetry: true });
@@ -147,6 +155,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 export const api = {
   get: <T>(path: string, query?: RequestOptions['query']) =>
     apiRequest<T>(path, { method: 'GET', query }),
+  /** For public endpoints: no Authorization header, no 401-retry path. */
+  getPublic: <T>(path: string, query?: RequestOptions['query']) =>
+    apiRequest<T>(path, { method: 'GET', query, skipAuth: true }),
   post: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
